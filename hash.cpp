@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cstring>
-#include <chrono> // Для замера времени
+#include <chrono>
 
 using namespace std;
 
@@ -11,11 +11,17 @@ const int TABLE_SIZE = 20011;
 // ==========================================
 struct LinearHash {
     char keys[TABLE_SIZE][256];
+    int  values[TABLE_SIZE];      
     bool is_occupied[TABLE_SIZE];
-    int collisions; // Счетчик коллизий
+    bool is_deleted[TABLE_SIZE];
+    int collisions;
 
     void init() {
-        for (int i = 0; i < TABLE_SIZE; ++i) is_occupied[i] = false;
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            is_occupied[i] = false;
+            is_deleted[i]  = false;
+            values[i]      = 0;
+        }
         collisions = 0;
     }
 
@@ -26,18 +32,67 @@ struct LinearHash {
         return h % TABLE_SIZE;
     }
 
-    int find_or_insert(const char* key) {
+    bool insert(const char* key, int value) {
         int idx = hash(key);
+        int first_deleted = -1;
         bool collided = false;
-        while (is_occupied[idx]) {
-            if (strcmp(keys[idx], key) == 0) return idx;
-            idx = (idx + 1) % TABLE_SIZE; // Линейное пробирование
+
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            int pos = (idx + i) % TABLE_SIZE;
+
+            if (is_occupied[pos] && strcmp(keys[pos], key) == 0) {
+                values[pos] = value; 
+                return true;
+            }
+            if (!is_occupied[pos] && is_deleted[pos] && first_deleted == -1)
+                first_deleted = pos;
+            if (!is_occupied[pos] && !is_deleted[pos]) {
+                int target = (first_deleted != -1) ? first_deleted : pos;
+                strcpy(keys[target], key);
+                values[target] = value;
+                is_occupied[target] = true;
+                is_deleted[target]  = false;
+                if (collided) collisions++;
+                return true;
+            }
             collided = true;
         }
-        if (collided) collisions++;
-        strcpy(keys[idx], key);
-        is_occupied[idx] = true;
-        return idx;
+        if (first_deleted != -1) {
+            strcpy(keys[first_deleted], key);
+            values[first_deleted] = value;
+            is_occupied[first_deleted] = true;
+            is_deleted[first_deleted]  = false;
+            if (collided) collisions++;
+            return true;
+        }
+        return false;
+    }
+
+    bool search(const char* key) {
+        int idx = hash(key);
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            int pos = (idx + i) % TABLE_SIZE;
+            if (!is_occupied[pos] && !is_deleted[pos])
+                return false;
+            if (is_occupied[pos] && strcmp(keys[pos], key) == 0)
+                return true;
+        }
+        return false;
+    }
+
+    bool remove(const char* key) {
+        int idx = hash(key);
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            int pos = (idx + i) % TABLE_SIZE;
+            if (!is_occupied[pos] && !is_deleted[pos])
+                return false;
+            if (is_occupied[pos] && strcmp(keys[pos], key) == 0) {
+                is_occupied[pos] = false;
+                is_deleted[pos]  = true;
+                return true;
+            }
+        }
+        return false;
     }
 };
 
@@ -46,11 +101,17 @@ struct LinearHash {
 // ==========================================
 struct DoubleHash {
     char keys[TABLE_SIZE][256];
+    int  values[TABLE_SIZE];
     bool is_occupied[TABLE_SIZE];
+    bool is_deleted[TABLE_SIZE];
     int collisions;
 
     void init() {
-        for (int i = 0; i < TABLE_SIZE; ++i) is_occupied[i] = false;
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            is_occupied[i] = false;
+            is_deleted[i]  = false;
+            values[i]      = 0;
+        }
         collisions = 0;
     }
 
@@ -68,35 +129,84 @@ struct DoubleHash {
         return 1 + (h % (TABLE_SIZE - 1));
     }
 
-    int find_or_insert(const char* key) {
-        int idx = hash1(key);
+    bool insert(const char* key, int value) {
+        int idx  = hash1(key);
         int step = hash2(key);
+        int first_deleted = -1;
         bool collided = false;
-        while (is_occupied[idx]) {
-            if (strcmp(keys[idx], key) == 0) return idx;
-            idx = (idx + step) % TABLE_SIZE; // Двойное хеширование
+
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            int pos = (idx + i * step) % TABLE_SIZE;
+
+            if (is_occupied[pos] && strcmp(keys[pos], key) == 0) {
+                values[pos] = value;
+                return true;
+            }
+            if (!is_occupied[pos] && is_deleted[pos] && first_deleted == -1)
+                first_deleted = pos;
+            if (!is_occupied[pos] && !is_deleted[pos]) {
+                int target = (first_deleted != -1) ? first_deleted : pos;
+                strcpy(keys[target], key);
+                values[target] = value;
+                is_occupied[target] = true;
+                is_deleted[target]  = false;
+                if (collided) collisions++;
+                return true;
+            }
             collided = true;
         }
-        if (collided) collisions++;
-        strcpy(keys[idx], key);
-        is_occupied[idx] = true;
-        return idx;
+        if (first_deleted != -1) {
+            strcpy(keys[first_deleted], key);
+            values[first_deleted] = value;
+            is_occupied[first_deleted] = true;
+            is_deleted[first_deleted]  = false;
+            if (collided) collisions++;
+            return true;
+        }
+        return false;
+    }
+
+    bool search(const char* key) {
+        int idx  = hash1(key);
+        int step = hash2(key);
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            int pos = (idx + i * step) % TABLE_SIZE;
+            if (!is_occupied[pos] && !is_deleted[pos])
+                return false;
+            if (is_occupied[pos] && strcmp(keys[pos], key) == 0)
+                return true;
+        }
+        return false;
+    }
+
+    bool remove(const char* key) {
+        int idx  = hash1(key);
+        int step = hash2(key);
+        for (int i = 0; i < TABLE_SIZE; ++i) {
+            int pos = (idx + i * step) % TABLE_SIZE;
+            if (!is_occupied[pos] && !is_deleted[pos])
+                return false;
+            if (is_occupied[pos] && strcmp(keys[pos], key) == 0) {
+                is_occupied[pos] = false;
+                is_deleted[pos]  = true;
+                return true;
+            }
+        }
+        return false;
     }
 };
 
 // ==========================================
-// ТЕСТ ДЛЯ ПОДЗАДАНИЯ 6.1 (ЭМПИРИЧЕСКИЙ АНАЛИЗ)
+// ТЕСТ ДЛЯ ПОДЗАДАНИЯ 6.1
 // ==========================================
 void test_hash_methods() {
     cout << "\n--- Эмпирический анализ 6.1 ---\n";
     
-    // ВАЖНО: Выделяем в КУЧЕ, чтобы не переполнить стек (таблицы весят по ~5 МБ)
     LinearHash* lh = new LinearHash();
     DoubleHash* dh = new DoubleHash();
     lh->init();
     dh->init();
 
-    // Генерируем 5000 случайных строк
     const int N = 5000;
     char** test_strings = new char*[N];
     for (int i = 0; i < N; ++i) {
@@ -104,37 +214,35 @@ void test_hash_methods() {
         sprintf(test_strings[i], "key_%d_%d", i, rand() % 1000);
     }
 
-    // Тест 1: Линейное пробирование
+    // Вставка теперь с передачей значения (i)
     auto start = chrono::high_resolution_clock::now();
     for (int i = 0; i < N; ++i) {
-        lh->find_or_insert(test_strings[i]);
+        lh->insert(test_strings[i], i);
     }
     auto end = chrono::high_resolution_clock::now();
     auto lh_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 
-    // Тест 2: Двойное хеширование
     start = chrono::high_resolution_clock::now();
     for (int i = 0; i < N; ++i) {
-        dh->find_or_insert(test_strings[i]);
+        dh->insert(test_strings[i], i);
     }
     end = chrono::high_resolution_clock::now();
     auto dh_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 
-    // Вывод результатов
+    // Поиск теперь возвращает только true/false
+    bool found1 = lh->search(test_strings[0]);
+    bool found2 = dh->search(test_strings[N - 1]);
+
     cout << "Вставка " << N << " элементов:\n";
     cout << "1) Линейное пробирование:\n";
     cout << "   Время: " << lh_time << " мс\n";
-    cout << "   Коллизий (потребовалось шагов): " << lh->collisions << "\n";
+    cout << "   Коллизий: " << lh->collisions << "\n";
     cout << "2) Двойное хеширование:\n";
     cout << "   Время: " << dh_time << " мс\n";
-    cout << "   Коллизий (потребовалось шагов): " << dh->collisions << "\n";
-    
-    cout << "\nВывод: Двойное хеширование обычно дает меньше коллизий,\n";
-    cout << "так как шаг зависит от самого ключа, а не просто +1.\n";
-    cout << "Но оно требует больше вычислений (два хеша).\n";
+    cout << "   Коллизий: " << dh->collisions << "\n";
+
     cout << "------------------------------\n";
 
-    // Очистка памяти
     for (int i = 0; i < N; ++i) delete[] test_strings[i];
     delete[] test_strings;
     delete lh;
@@ -161,12 +269,10 @@ int count_descendants(int p_idx, Person* people, int n) {
 }
 
 void runHash() {
-    // Сначала запускаем тест 6.1!
     test_hash_methods();
 
     cout << "\n=== Задание 6.2: Родословная (Вариант 9) ===\n";
     
-    // Тоже выделяем в куче!
     DoubleHash* ht = new DoubleHash();
     ht->init();
 
@@ -179,14 +285,22 @@ void runHash() {
     int people_count = 0;
 
     auto get_person_idx = [&](const char* name) -> int {
-        ht->find_or_insert(name); 
+        // Если имени нет, вставляем его (передаем people_count как значение)
+        if (!ht->search(name)) {
+            ht->insert(name, people_count);
+        }
+
+        // Так как search не возвращает значение, ищем индекс перебором
         for (int i = 0; i < people_count; ++i) {
             if (strcmp(people[i].name, name) == 0) return i;
         }
+
+        // Если человека не было — создаем новую запись
         strcpy(people[people_count].name, name);
         people[people_count].parent_idx = -1;
         people[people_count].descendants_count = 0;
-        return people_count++;
+        people_count++;
+        return people_count - 1;
     };
 
     for (int i = 0; i < n - 1; ++i) {
@@ -197,7 +311,7 @@ void runHash() {
         people[c_idx].parent_idx = p_idx;
     }
 
-    // Считаем потомков до сортировки (пока индексы валидны)
+    // Считаем потомков
     for (int i = 0; i < people_count; ++i) {
         people[i].descendants_count = count_descendants(i, people, people_count);
     }
